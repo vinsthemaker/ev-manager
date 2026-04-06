@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1639,6 +1640,67 @@
     top: 0;
   }
 
+  /* ── CURVE EDITOR ── */
+  .curve-editor-wrap {
+    position: relative;
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    overflow: hidden;
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  .curve-editor-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 200px;
+  }
+
+  .curve-editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .curve-editor-hint {
+    font-size: 10px;
+    color: var(--text3);
+    font-family: var(--font-mono);
+  }
+
+  .curve-editor-actions { display: flex; gap: 6px; }
+
+  .curve-preset-btn {
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text2);
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .curve-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .curve-has-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    background: rgba(0,255,136,0.1);
+    border: 1px solid rgba(0,255,136,0.3);
+    color: var(--accent2);
+    border-radius: 5px;
+    padding: 2px 7px;
+    margin-left: 6px;
+  }
+
   /* ── CHARGE TAB ── */
   .chg-type-btn {
     flex: 1;
@@ -2332,6 +2394,29 @@
         </div>
       </div>
 
+      <!-- SECTION COURBE DE CHARGE -->
+      <div class="form-section">
+        <div class="form-section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>05 — Courbe de charge DC</span>
+          <span id="curve-badge" style="display:none" class="curve-has-badge">✓ Personnalisée</span>
+        </div>
+        <div class="curve-editor-toolbar">
+          <span class="curve-editor-hint">Cliquer pour ajouter · Glisser pour déplacer · Double-clic pour supprimer</span>
+          <div class="curve-editor-actions">
+            <button class="curve-preset-btn" onclick="applyCurvePreset('standard')">Standard</button>
+            <button class="curve-preset-btn" onclick="applyCurvePreset('mg')">MG ZS style</button>
+            <button class="curve-preset-btn" onclick="applyCurvePreset('ioniq')">Hyundai style</button>
+            <button class="curve-preset-btn" onclick="resetCurve()">Reset</button>
+          </div>
+        </div>
+        <div class="curve-editor-wrap" id="curve-editor-wrap">
+          <canvas id="curve-editor-canvas"></canvas>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text3);font-family:var(--font-mono)">
+          <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100% SoC</span>
+        </div>
+      </div>
+
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
@@ -2348,6 +2433,7 @@
 let vehicles = JSON.parse(localStorage.getItem('ev_vehicles') || '[]');
 let editingId = null;
 let photoDataUrl = null;
+let curvePoints = []; // [{soc:0..100, kw:0..350}] sorted by soc
 
 // ── TABS ───────────────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -2418,7 +2504,7 @@ function buildCard(v) {
     <div class="charge-badge">
       <div class="charge-badge-icon">⚡</div>
       <div class="charge-badge-info">
-        <div class="charge-badge-type">DC · ${v.dcType || 'CCS2'}</div>
+        <div class="charge-badge-type">DC · ${v.dcType || 'CCS2'}${v.chargeCurve ? ' <span style="color:var(--accent2);font-size:9px">✓ courbe</span>' : ''}</div>
         <div class="charge-badge-power">${v.ccs}<span class="unit"> kW</span></div>
       </div>
     </div>` : '';
@@ -2497,11 +2583,19 @@ function openModal(id = null) {
       showPhotoPreview(v.photo);
       photoDataUrl = v.photo;
     }
+    // Load curve
+    if (v.chargeCurve && v.chargeCurve.length >= 2) {
+      curvePoints = v.chargeCurve.map(p => ({...p}));
+    } else {
+      curvePoints = generateDefaultCurve(parseFloat(v.ccs) || 50);
+    }
   } else {
     document.getElementById('modal-title').textContent = 'Nouveau véhicule';
+    curvePoints = generateDefaultCurve(50);
   }
 
   document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(() => initCurveEditor(), 50);
 }
 
 function closeModal() {
@@ -2524,6 +2618,9 @@ function resetForm() {
   document.getElementById('degrad-val').textContent = '0%';
   document.getElementById('v-photo-file').value = '';
   resetPhotoPreview();
+  curvePoints = generateDefaultCurve(50);
+  if (document.getElementById('curve-editor-canvas')) renderCurve();
+  updateCurveBadge();
 }
 
 // ── PHOTO ──────────────────────────────────────────────────────────────────
@@ -2582,6 +2679,7 @@ function saveVehicle() {
     ccs: document.getElementById('v-ccs').value,
     acType: document.getElementById('v-ac-type').value,
     dcType: document.getElementById('v-dc-type').value,
+    chargeCurve: curvePoints.length >= 2 ? [...curvePoints] : null,
   };
 
   if (editingId) {
@@ -2619,6 +2717,318 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.remove(), 3000);
 }
 
+
+// ── CURVE EDITOR ───────────────────────────────────────────────────────────
+let curveCanvas = null;
+let curveCtx = null;
+let curveDragging = null; // index of point being dragged
+let curveMaxKw = 150;     // dynamic Y axis max
+
+const CURVE_PAD = { top: 12, right: 16, bottom: 12, left: 40 };
+
+// Preset curves
+function generateDefaultCurve(maxKw) {
+  const p = maxKw || 50;
+  return [
+    { soc: 0,   kw: Math.round(p * 0.15) },
+    { soc: 10,  kw: Math.round(p * 0.95) },
+    { soc: 50,  kw: Math.round(p * 0.95) },
+    { soc: 80,  kw: Math.round(p * 0.55) },
+    { soc: 90,  kw: Math.round(p * 0.25) },
+    { soc: 100, kw: Math.round(p * 0.08) },
+  ];
+}
+
+const CURVE_PRESETS = {
+  standard: (max) => [
+    { soc: 0,   kw: Math.round(max * 0.15) },
+    { soc: 10,  kw: Math.round(max * 1.0) },
+    { soc: 50,  kw: Math.round(max * 1.0) },
+    { soc: 80,  kw: Math.round(max * 0.5) },
+    { soc: 90,  kw: Math.round(max * 0.2) },
+    { soc: 100, kw: Math.round(max * 0.07) },
+  ],
+  mg: (max) => [
+    { soc: 0,   kw: Math.round(max * 0.27) },
+    { soc: 8,   kw: Math.round(max * 0.97) },
+    { soc: 40,  kw: Math.round(max * 1.0)  },
+    { soc: 50,  kw: Math.round(max * 0.87) },
+    { soc: 60,  kw: Math.round(max * 0.87) },
+    { soc: 70,  kw: Math.round(max * 0.79) },
+    { soc: 75,  kw: Math.round(max * 0.61) },
+    { soc: 80,  kw: Math.round(max * 0.30) },
+    { soc: 87,  kw: Math.round(max * 0.17) },
+    { soc: 95,  kw: Math.round(max * 0.09) },
+    { soc: 100, kw: Math.round(max * 0.06) },
+  ],
+  ioniq: (max) => [
+    { soc: 0,   kw: Math.round(max * 0.20) },
+    { soc: 5,   kw: Math.round(max * 1.0)  },
+    { soc: 53,  kw: Math.round(max * 1.0)  },
+    { soc: 75,  kw: Math.round(max * 0.65) },
+    { soc: 80,  kw: Math.round(max * 0.45) },
+    { soc: 90,  kw: Math.round(max * 0.20) },
+    { soc: 100, kw: Math.round(max * 0.07) },
+  ],
+};
+
+function applyCurvePreset(preset) {
+  const maxKw = parseFloat(document.getElementById('v-ccs').value) || 100;
+  curvePoints = CURVE_PRESETS[preset](maxKw);
+  renderCurve();
+  updateCurveBadge();
+}
+
+function resetCurve() {
+  const maxKw = parseFloat(document.getElementById('v-ccs').value) || 50;
+  curvePoints = generateDefaultCurve(maxKw);
+  renderCurve();
+  updateCurveBadge();
+}
+
+function updateCurveBadge() {
+  const badge = document.getElementById('curve-badge');
+  if (badge) badge.style.display = curvePoints.length >= 2 ? 'inline-flex' : 'none';
+}
+
+function initCurveEditor() {
+  curveCanvas = document.getElementById('curve-editor-canvas');
+  if (!curveCanvas) return;
+  curveCtx = curveCanvas.getContext('2d');
+
+  // Size canvas to actual px
+  const rect = curveCanvas.parentElement.getBoundingClientRect();
+  curveCanvas.width  = rect.width  || 600;
+  curveCanvas.height = 200;
+
+  updateCurveBadge();
+  renderCurve();
+
+  // Events — mouse
+  curveCanvas.addEventListener('mousedown',  onCurveMouseDown);
+  curveCanvas.addEventListener('mousemove',  onCurveMouseMove);
+  curveCanvas.addEventListener('mouseup',    onCurveMouseUp);
+  curveCanvas.addEventListener('mouseleave', onCurveMouseUp);
+  curveCanvas.addEventListener('dblclick',   onCurveDblClick);
+  // Events — touch
+  curveCanvas.addEventListener('touchstart',  onCurveTouchStart, { passive: false });
+  curveCanvas.addEventListener('touchmove',   onCurveTouchMove,  { passive: false });
+  curveCanvas.addEventListener('touchend',    onCurveTouchEnd);
+}
+
+// ── Coordinate helpers ──────────────────────────────────────────────
+function curveToCanvas(soc, kw) {
+  const W = curveCanvas.width, H = curveCanvas.height;
+  const pw = W - CURVE_PAD.left - CURVE_PAD.right;
+  const ph = H - CURVE_PAD.top  - CURVE_PAD.bottom;
+  curveMaxKw = Math.max(...curvePoints.map(p => p.kw), 50) * 1.1;
+  const x = CURVE_PAD.left + (soc / 100) * pw;
+  const y = CURVE_PAD.top  + (1 - kw / curveMaxKw) * ph;
+  return { x, y };
+}
+
+function canvasToCurve(cx, cy) {
+  const W = curveCanvas.width, H = curveCanvas.height;
+  const pw = W - CURVE_PAD.left - CURVE_PAD.right;
+  const ph = H - CURVE_PAD.top  - CURVE_PAD.bottom;
+  curveMaxKw = Math.max(...curvePoints.map(p => p.kw), 50) * 1.1;
+  const soc = Math.round(Math.max(0, Math.min(100, (cx - CURVE_PAD.left) / pw * 100)));
+  const kw  = Math.round(Math.max(0, Math.min(curveMaxKw * 1.2, (1 - (cy - CURVE_PAD.top) / ph) * curveMaxKw)));
+  return { soc, kw };
+}
+
+function getEventXY(e) {
+  const rect = curveCanvas.getBoundingClientRect();
+  const scaleX = curveCanvas.width  / rect.width;
+  const scaleY = curveCanvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top)  * scaleY,
+  };
+}
+
+function nearestPoint(x, y, threshold = 16) {
+  let best = -1, bestDist = Infinity;
+  curvePoints.forEach((p, i) => {
+    const { x: px, y: py } = curveToCanvas(p.soc, p.kw);
+    const d = Math.hypot(x - px, y - py);
+    if (d < threshold && d < bestDist) { best = i; bestDist = d; }
+  });
+  return best;
+}
+
+// ── Mouse events ────────────────────────────────────────────────────
+function onCurveMouseDown(e) {
+  const { x, y } = getEventXY(e);
+  const idx = nearestPoint(x, y);
+  if (idx >= 0) {
+    curveDragging = idx;
+  } else {
+    // Add new point
+    const { soc, kw } = canvasToCurve(x, y);
+    curvePoints.push({ soc, kw });
+    curvePoints.sort((a, b) => a.soc - b.soc);
+    curveDragging = curvePoints.findIndex(p => p.soc === soc && p.kw === kw);
+    renderCurve();
+    updateCurveBadge();
+  }
+}
+
+function onCurveMouseMove(e) {
+  if (curveDragging === null) return;
+  const { x, y } = getEventXY(e);
+  const { soc, kw } = canvasToCurve(x, y);
+  curvePoints[curveDragging] = { soc, kw };
+  curvePoints.sort((a, b) => a.soc - b.soc);
+  curveDragging = curvePoints.findIndex(p => p.soc === soc && p.kw === kw);
+  renderCurve();
+}
+
+function onCurveMouseUp() { curveDragging = null; }
+
+function onCurveDblClick(e) {
+  const { x, y } = getEventXY(e);
+  const idx = nearestPoint(x, y, 20);
+  if (idx >= 0 && curvePoints.length > 2) {
+    curvePoints.splice(idx, 1);
+    renderCurve();
+    updateCurveBadge();
+  }
+}
+
+// ── Touch events ────────────────────────────────────────────────────
+let lastTap = 0;
+function onCurveTouchStart(e) {
+  e.preventDefault();
+  const touch = e.touches[0];
+  const fakeE = { clientX: touch.clientX, clientY: touch.clientY };
+
+  // Double-tap detection
+  const now = Date.now();
+  if (now - lastTap < 300) {
+    onCurveDblClick(fakeE);
+    lastTap = 0;
+    return;
+  }
+  lastTap = now;
+  onCurveMouseDown(fakeE);
+}
+
+function onCurveTouchMove(e) {
+  e.preventDefault();
+  if (curveDragging === null) return;
+  const touch = e.touches[0];
+  onCurveMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+}
+
+function onCurveTouchEnd() { curveDragging = null; }
+
+// ── Render ──────────────────────────────────────────────────────────
+function renderCurve() {
+  if (!curveCtx || !curveCanvas) return;
+  const W = curveCanvas.width, H = curveCanvas.height;
+  const pw = W - CURVE_PAD.left - CURVE_PAD.right;
+  const ph = H - CURVE_PAD.top  - CURVE_PAD.bottom;
+  const ctx = curveCtx;
+
+  curveMaxKw = Math.max(...curvePoints.map(p => p.kw), 50) * 1.15;
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#131b22';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(30,45,61,0.9)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = CURVE_PAD.top + ph * i / 4;
+    ctx.beginPath(); ctx.moveTo(CURVE_PAD.left, y); ctx.lineTo(CURVE_PAD.left + pw, y); ctx.stroke();
+    // Y label
+    ctx.fillStyle = '#4a6a7a';
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    const val = Math.round(curveMaxKw * (1 - i / 4));
+    ctx.fillText(val, CURVE_PAD.left - 4, y + 4);
+  }
+  for (let i = 0; i <= 10; i++) {
+    const x = CURVE_PAD.left + pw * i / 10;
+    ctx.strokeStyle = 'rgba(30,45,61,0.9)';
+    ctx.beginPath(); ctx.moveTo(x, CURVE_PAD.top); ctx.lineTo(x, CURVE_PAD.top + ph); ctx.stroke();
+  }
+
+  if (curvePoints.length < 2) {
+    ctx.fillStyle = '#4a6a7a';
+    ctx.font = '12px Rajdhani, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Cliquez pour ajouter des points', W / 2, H / 2);
+    return;
+  }
+
+  const sorted = [...curvePoints].sort((a, b) => a.soc - b.soc);
+
+  // Fill under curve
+  const grad = ctx.createLinearGradient(0, CURVE_PAD.top, 0, CURVE_PAD.top + ph);
+  grad.addColorStop(0, 'rgba(0,200,255,0.25)');
+  grad.addColorStop(1, 'rgba(0,200,255,0.02)');
+
+  ctx.beginPath();
+  sorted.forEach((p, i) => {
+    const { x, y } = curveToCanvas(p.soc, p.kw);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  const last = curveToCanvas(sorted[sorted.length - 1].soc, sorted[sorted.length - 1].kw);
+  ctx.lineTo(last.x, CURVE_PAD.top + ph);
+  ctx.lineTo(CURVE_PAD.left, CURVE_PAD.top + ph);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = '#00c8ff';
+  ctx.lineWidth = 2;
+  sorted.forEach((p, i) => {
+    const { x, y } = curveToCanvas(p.soc, p.kw);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Points
+  sorted.forEach((p, i) => {
+    const { x, y } = curveToCanvas(p.soc, p.kw);
+    const isSelected = curveDragging !== null && curvePoints[curveDragging] === p;
+
+    ctx.beginPath();
+    ctx.arc(x, y, isSelected ? 8 : 6, 0, Math.PI * 2);
+    ctx.fillStyle = isSelected ? '#fff' : '#00c8ff';
+    ctx.fill();
+    ctx.strokeStyle = isSelected ? '#00c8ff' : '#080c10';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Tooltip on hover: show kW value
+    ctx.fillStyle = '#00c8ff';
+    ctx.font = 'bold 9px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.kw + 'kW', x, y - 10);
+  });
+}
+
+// ── Interpolate kW from curve ───────────────────────────────────────
+function interpolateCurve(curve, soc) {
+  if (!curve || curve.length < 2) return null;
+  const sorted = [...curve].sort((a, b) => a.soc - b.soc);
+  if (soc <= sorted[0].soc) return sorted[0].kw;
+  if (soc >= sorted[sorted.length - 1].soc) return sorted[sorted.length - 1].kw;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (soc >= sorted[i].soc && soc <= sorted[i + 1].soc) {
+      const t = (soc - sorted[i].soc) / (sorted[i + 1].soc - sorted[i].soc);
+      return sorted[i].kw + t * (sorted[i + 1].kw - sorted[i].kw);
+    }
+  }
+  return sorted[sorted.length - 1].kw;
+}
 
 // ── AUTONOMIE ──────────────────────────────────────────────────────────────
 let autoSelectedVehicleId = null;
@@ -3074,16 +3484,18 @@ function computeCharge() {
   // Simulation par pas de 1% SoC
   const STEP = 1; // % SoC per step
   let totalTimeH = 0;
-  const curvePoints = []; // { soc, kw }
+  const curvePoints2 = []; // { soc, kw }
+  const customCurve = (chgType === 'dc' && v.chargeCurve && v.chargeCurve.length >= 2) ? v.chargeCurve : null;
+  const hasCurve = !!customCurve;
 
   for (let soc = socFrom; soc < socTo; soc += STEP) {
-    const power = getPowerAtSoc(soc, effectivePower, chgType);
+    const power = getPowerAtSoc(soc, effectivePower, chgType, customCurve);
     const kwhNeeded = realCap * STEP / 100;
     const timeH = kwhNeeded / power;
     totalTimeH += timeH;
-    curvePoints.push({ soc, kw: power });
+    curvePoints2.push({ soc, kw: power });
   }
-  curvePoints.push({ soc: socTo, kw: getPowerAtSoc(socTo, effectivePower, chgType) });
+  curvePoints2.push({ soc: socTo, kw: getPowerAtSoc(socTo, effectivePower, chgType, customCurve) });
 
   const totalKwh = realCap * (socTo - socFrom) / 100;
 
@@ -3098,7 +3510,7 @@ function computeCharge() {
   if (chgType === 'dc') {
     const threshold = 80;
     for (let soc = socFrom; soc < socTo; soc += STEP) {
-      const power = getPowerAtSoc(soc, effectivePower, chgType);
+      const power = getPowerAtSoc(soc, effectivePower, chgType, customCurve);
       const kwhNeeded = realCap * STEP / 100;
       const t = kwhNeeded / power * 60;
       if (soc < threshold) phase1TimeMin += t;
@@ -3138,14 +3550,14 @@ function computeCharge() {
       </div>` : ''}
 
       <div class="charge-curve-wrap">
-        <div class="charge-curve-title">// Courbe de charge — Puissance (kW) vs SoC (%)</div>
+        <div class="charge-curve-title">// Courbe de charge — Puissance (kW) vs SoC (%)${hasCurve ? ' <span style="color:var(--accent2);font-size:10px">✓ courbe personnalisée</span>' : ''}</div>
         <canvas id="chg-curve-canvas" width="600" height="160"></canvas>
         <div class="curve-legend">
           <div class="curve-legend-item">
             <div class="curve-legend-dot" style="background:var(--accent)"></div>
             Puissance (kW)
           </div>
-          ${chgType === 'dc' ? `<div class="curve-legend-item">
+          ${chgType === 'dc' && !hasCurve ? `<div class="curve-legend-item">
             <div class="curve-legend-dot" style="background:var(--warn);opacity:0.5"></div>
             Zone bridage (>80%)
           </div>` : ''}
@@ -3183,14 +3595,19 @@ function computeCharge() {
     </div>`;
 
   // Draw curve after DOM update
-  requestAnimationFrame(() => drawChargeCurve(curvePoints, effectivePower));
+  requestAnimationFrame(() => drawChargeCurve(curvePoints2, effectivePower));
 }
 
-function getPowerAtSoc(soc, peakPower, type) {
+function getPowerAtSoc(soc, peakPower, type, customCurve) {
+  // If custom DC curve exists and we're in DC mode, use it (capped by station)
+  if (type === 'dc' && customCurve && customCurve.length >= 2) {
+    const curvePower = interpolateCurve(customCurve, soc);
+    return Math.min(curvePower, peakPower);
+  }
   if (type === 'ac') return peakPower; // AC = linéaire
-  // DC: pleine puissance jusqu'à 80%, puis throttle linéaire vers 20% à 100%
+  // DC fallback: pleine puissance jusqu'à 80%, puis throttle
   if (soc <= 80) return peakPower;
-  const throttle = 1 - (soc - 80) / 20 * 0.8; // 100% → 20% de 80 à 100%
+  const throttle = 1 - (soc - 80) / 20 * 0.8;
   return peakPower * Math.max(0.2, throttle);
 }
 
