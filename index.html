@@ -1640,42 +1640,102 @@
     top: 0;
   }
 
-  /* ── CURVE EDITOR ── */
-  .curve-editor-wrap {
-    position: relative;
+  /* ── CURVE GAUGE EDITOR ── */
+  .curve-gauge-outer {
     background: var(--surface3);
     border: 1px solid var(--border2);
     border-radius: 10px;
-    overflow: hidden;
+    padding: 14px 10px 10px;
+  }
+
+  .curve-gauge-wrap {
+    display: flex;
+    gap: 4px;
+    align-items: flex-end;
+    height: 160px;
+    position: relative;
+  }
+
+  .curve-gauge-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+    user-select: none;
+    -webkit-user-select: none;
     touch-action: none;
-    cursor: crosshair;
   }
 
-  .curve-editor-wrap canvas {
-    display: block;
+  .curve-gauge-kw {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    height: 14px;
+    line-height: 14px;
+    flex-shrink: 0;
+  }
+
+  .curve-gauge-track {
+    flex: 1;
     width: 100%;
-    height: 200px;
+    background: var(--surface2);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: ns-resize;
+    min-height: 0;
   }
 
-  .curve-editor-toolbar {
+  .curve-gauge-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 3px 3px 0 0;
+    transition: height 0.05s;
+  }
+
+  .curve-gauge-soc {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--text3);
+    text-align: center;
+    flex-shrink: 0;
+    height: 12px;
+    line-height: 12px;
+  }
+
+  .curve-gauge-col.dragging .curve-gauge-track {
+    border-color: var(--accent);
+    box-shadow: 0 0 8px rgba(0,200,255,0.3);
+  }
+
+  .curve-gauge-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
     margin-bottom: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
   }
 
-  .curve-editor-hint {
+  .curve-gauge-hint {
     font-size: 10px;
     color: var(--text3);
     font-family: var(--font-mono);
   }
 
-  .curve-editor-actions { display: flex; gap: 6px; }
+  .curve-gauge-presets { display: flex; gap: 5px; flex-wrap: wrap; }
 
   .curve-preset-btn {
     font-size: 11px;
-    padding: 5px 10px;
+    padding: 5px 9px;
     border-radius: 6px;
     border: 1px solid var(--border2);
     background: var(--surface2);
@@ -1683,6 +1743,7 @@
     font-family: var(--font-mono);
     cursor: pointer;
     transition: all 0.15s;
+    white-space: nowrap;
   }
 
   .curve-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -2400,20 +2461,20 @@
           <span>05 — Courbe de charge DC</span>
           <span id="curve-badge" style="display:none" class="curve-has-badge">✓ Personnalisée</span>
         </div>
-        <div class="curve-editor-toolbar">
-          <span class="curve-editor-hint">Cliquer pour ajouter · Glisser pour déplacer · Double-clic pour supprimer</span>
-          <div class="curve-editor-actions">
+        <div class="curve-gauge-toolbar">
+          <span class="curve-gauge-hint">↕ Glisser chaque barre</span>
+          <div class="curve-gauge-presets">
             <button class="curve-preset-btn" onclick="applyCurvePreset('standard')">Standard</button>
-            <button class="curve-preset-btn" onclick="applyCurvePreset('mg')">MG ZS style</button>
-            <button class="curve-preset-btn" onclick="applyCurvePreset('ioniq')">Hyundai style</button>
+            <button class="curve-preset-btn" onclick="applyCurvePreset('mg')">MG ZS</button>
+            <button class="curve-preset-btn" onclick="applyCurvePreset('ioniq')">Hyundai</button>
+            <button class="curve-preset-btn" onclick="applyCurvePreset('tesla')">Tesla</button>
             <button class="curve-preset-btn" onclick="resetCurve()">Reset</button>
           </div>
         </div>
-        <div class="curve-editor-wrap" id="curve-editor-wrap">
-          <canvas id="curve-editor-canvas"></canvas>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text3);font-family:var(--font-mono)">
-          <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100% SoC</span>
+        <div class="curve-gauge-outer">
+          <div class="curve-gauge-wrap" id="curve-gauge-wrap">
+            <!-- Généré par JS -->
+          </div>
         </div>
       </div>
 
@@ -2718,71 +2779,197 @@ function showToast(msg, type = 'success') {
 }
 
 
-// ── CURVE EDITOR ───────────────────────────────────────────────────────────
-let curveCanvas = null;
-let curveCtx = null;
-let curveDragging = null; // index of point being dragged
-let curveMaxKw = 150;     // dynamic Y axis max
+// ── CURVE GAUGE EDITOR ─────────────────────────────────────────────────────
+// curvePoints = always 11 fixed points: soc 0,10,20,...,100
+// curvePoints[i] = { soc: i*10, kw: number }
 
-const CURVE_PAD = { top: 12, right: 16, bottom: 12, left: 40 };
+const SOC_STEPS = [0,10,20,30,40,50,60,70,80,90,100];
 
-// Preset curves
 function generateDefaultCurve(maxKw) {
   const p = maxKw || 50;
   return [
-    { soc: 0,   kw: Math.round(p * 0.15) },
-    { soc: 10,  kw: Math.round(p * 0.95) },
-    { soc: 50,  kw: Math.round(p * 0.95) },
-    { soc: 80,  kw: Math.round(p * 0.55) },
-    { soc: 90,  kw: Math.round(p * 0.25) },
-    { soc: 100, kw: Math.round(p * 0.08) },
+    { soc:0,   kw: Math.round(p*0.12) },
+    { soc:10,  kw: Math.round(p*0.95) },
+    { soc:20,  kw: Math.round(p*0.95) },
+    { soc:30,  kw: Math.round(p*0.95) },
+    { soc:40,  kw: Math.round(p*0.95) },
+    { soc:50,  kw: Math.round(p*0.88) },
+    { soc:60,  kw: Math.round(p*0.75) },
+    { soc:70,  kw: Math.round(p*0.60) },
+    { soc:80,  kw: Math.round(p*0.40) },
+    { soc:90,  kw: Math.round(p*0.20) },
+    { soc:100, kw: Math.round(p*0.07) },
   ];
 }
 
 const CURVE_PRESETS = {
-  standard: (max) => [
-    { soc: 0,   kw: Math.round(max * 0.15) },
-    { soc: 10,  kw: Math.round(max * 1.0) },
-    { soc: 50,  kw: Math.round(max * 1.0) },
-    { soc: 80,  kw: Math.round(max * 0.5) },
-    { soc: 90,  kw: Math.round(max * 0.2) },
-    { soc: 100, kw: Math.round(max * 0.07) },
+  standard: p => [
+    { soc:0,   kw:Math.round(p*0.12) },
+    { soc:10,  kw:Math.round(p*0.95) },
+    { soc:20,  kw:Math.round(p*0.95) },
+    { soc:30,  kw:Math.round(p*0.95) },
+    { soc:40,  kw:Math.round(p*0.95) },
+    { soc:50,  kw:Math.round(p*0.88) },
+    { soc:60,  kw:Math.round(p*0.75) },
+    { soc:70,  kw:Math.round(p*0.58) },
+    { soc:80,  kw:Math.round(p*0.38) },
+    { soc:90,  kw:Math.round(p*0.18) },
+    { soc:100, kw:Math.round(p*0.07) },
   ],
-  mg: (max) => [
-    { soc: 0,   kw: Math.round(max * 0.27) },
-    { soc: 8,   kw: Math.round(max * 0.97) },
-    { soc: 40,  kw: Math.round(max * 1.0)  },
-    { soc: 50,  kw: Math.round(max * 0.87) },
-    { soc: 60,  kw: Math.round(max * 0.87) },
-    { soc: 70,  kw: Math.round(max * 0.79) },
-    { soc: 75,  kw: Math.round(max * 0.61) },
-    { soc: 80,  kw: Math.round(max * 0.30) },
-    { soc: 87,  kw: Math.round(max * 0.17) },
-    { soc: 95,  kw: Math.round(max * 0.09) },
-    { soc: 100, kw: Math.round(max * 0.06) },
+  mg: p => [
+    { soc:0,   kw:Math.round(p*0.27) },
+    { soc:10,  kw:Math.round(p*0.97) },
+    { soc:20,  kw:Math.round(p*0.97) },
+    { soc:30,  kw:Math.round(p*0.97) },
+    { soc:40,  kw:Math.round(p*1.00) },
+    { soc:50,  kw:Math.round(p*0.87) },
+    { soc:60,  kw:Math.round(p*0.87) },
+    { soc:70,  kw:Math.round(p*0.79) },
+    { soc:80,  kw:Math.round(p*0.30) },
+    { soc:90,  kw:Math.round(p*0.13) },
+    { soc:100, kw:Math.round(p*0.06) },
   ],
-  ioniq: (max) => [
-    { soc: 0,   kw: Math.round(max * 0.20) },
-    { soc: 5,   kw: Math.round(max * 1.0)  },
-    { soc: 53,  kw: Math.round(max * 1.0)  },
-    { soc: 75,  kw: Math.round(max * 0.65) },
-    { soc: 80,  kw: Math.round(max * 0.45) },
-    { soc: 90,  kw: Math.round(max * 0.20) },
-    { soc: 100, kw: Math.round(max * 0.07) },
+  ioniq: p => [
+    { soc:0,   kw:Math.round(p*0.20) },
+    { soc:10,  kw:Math.round(p*1.00) },
+    { soc:20,  kw:Math.round(p*1.00) },
+    { soc:30,  kw:Math.round(p*1.00) },
+    { soc:40,  kw:Math.round(p*1.00) },
+    { soc:50,  kw:Math.round(p*1.00) },
+    { soc:60,  kw:Math.round(p*0.85) },
+    { soc:70,  kw:Math.round(p*0.65) },
+    { soc:80,  kw:Math.round(p*0.43) },
+    { soc:90,  kw:Math.round(p*0.20) },
+    { soc:100, kw:Math.round(p*0.07) },
+  ],
+  tesla: p => [
+    { soc:0,   kw:Math.round(p*0.10) },
+    { soc:10,  kw:Math.round(p*1.00) },
+    { soc:20,  kw:Math.round(p*1.00) },
+    { soc:30,  kw:Math.round(p*1.00) },
+    { soc:40,  kw:Math.round(p*0.95) },
+    { soc:50,  kw:Math.round(p*0.85) },
+    { soc:60,  kw:Math.round(p*0.72) },
+    { soc:70,  kw:Math.round(p*0.58) },
+    { soc:80,  kw:Math.round(p*0.35) },
+    { soc:90,  kw:Math.round(p*0.18) },
+    { soc:100, kw:Math.round(p*0.08) },
   ],
 };
+
+function getGaugeMaxKw() {
+  return Math.max(...curvePoints.map(p => p.kw), 10) * 1.15;
+}
+
+function getBarColor(soc) {
+  // 0%=green, 50%=cyan, 80%=orange, 100%=red
+  if (soc <= 50) {
+    const t = soc / 50;
+    const r = Math.round(0   + t * 0);
+    const g = Math.round(255 + t * (200 - 255));
+    const b = Math.round(136 + t * (255 - 136));
+    return `rgb(${r},${g},${b})`;
+  } else if (soc <= 80) {
+    const t = (soc - 50) / 30;
+    const r = Math.round(0   + t * 255);
+    const g = Math.round(200 + t * (184 - 200));
+    const b = Math.round(255 + t * (48  - 255));
+    return `rgb(${r},${g},${b})`;
+  } else {
+    const t = (soc - 80) / 20;
+    const r = Math.round(255);
+    const g = Math.round(184 + t * (61 - 184));
+    const b = Math.round(48  + t * (90 - 48));
+    return `rgb(${r},${g},${b})`;
+  }
+}
+
+function renderGauge() {
+  const wrap = document.getElementById('curve-gauge-wrap');
+  if (!wrap) return;
+  const maxKw = getGaugeMaxKw();
+
+  wrap.innerHTML = curvePoints.map((p, i) => {
+    const pct = Math.min(100, Math.max(0, p.kw / maxKw * 100));
+    const color = getBarColor(p.soc);
+    return `
+      <div class="curve-gauge-col" id="gauge-col-${i}" data-idx="${i}">
+        <div class="curve-gauge-kw" id="gauge-kw-${i}">${p.kw}</div>
+        <div class="curve-gauge-track" id="gauge-track-${i}">
+          <div class="curve-gauge-bar" id="gauge-bar-${i}"
+            style="height:${pct}%;background:linear-gradient(to top,${color},${color}88)">
+          </div>
+        </div>
+        <div class="curve-gauge-soc">${p.soc}%</div>
+      </div>`;
+  }).join('');
+
+  // Attach pointer events
+  curvePoints.forEach((_, i) => {
+    const col = document.getElementById(`gauge-col-${i}`);
+    const track = document.getElementById(`gauge-track-${i}`);
+    if (!col || !track) return;
+
+    let startY = null, startKw = null, trackH = null;
+
+    function startDrag(clientY) {
+      startY  = clientY;
+      startKw = curvePoints[i].kw;
+      trackH  = track.getBoundingClientRect().height || 120;
+      col.classList.add('dragging');
+    }
+
+    function moveDrag(clientY) {
+      if (startY === null) return;
+      const maxKw2 = getGaugeMaxKw();
+      const dy  = startY - clientY; // up = positive
+      const dkw = Math.round(dy / trackH * maxKw2);
+      const newKw = Math.max(0, Math.min(Math.round(maxKw2 * 1.1), startKw + dkw));
+      curvePoints[i] = { soc: curvePoints[i].soc, kw: newKw };
+      updateGaugeBar(i);
+    }
+
+    function endDrag() {
+      startY = null;
+      col.classList.remove('dragging');
+      updateCurveBadge();
+    }
+
+    // Mouse
+    track.addEventListener('mousedown', e => { e.preventDefault(); startDrag(e.clientY); });
+    document.addEventListener('mousemove', e => { if (startY !== null) moveDrag(e.clientY); });
+    document.addEventListener('mouseup', endDrag);
+
+    // Touch
+    track.addEventListener('touchstart', e => { e.preventDefault(); startDrag(e.touches[0].clientY); }, { passive: false });
+    track.addEventListener('touchmove',  e => { e.preventDefault(); moveDrag(e.touches[0].clientY); }, { passive: false });
+    track.addEventListener('touchend',   endDrag);
+  });
+}
+
+function updateGaugeBar(i) {
+  const p = curvePoints[i];
+  const maxKw = getGaugeMaxKw();
+  const pct = Math.min(100, Math.max(0, p.kw / maxKw * 100));
+  const color = getBarColor(p.soc);
+  const bar = document.getElementById(`gauge-bar-${i}`);
+  const kwEl = document.getElementById(`gauge-kw-${i}`);
+  if (bar) bar.style.height = pct + '%';
+  if (bar) bar.style.background = `linear-gradient(to top,${color},${color}88)`;
+  if (kwEl) kwEl.textContent = p.kw;
+}
 
 function applyCurvePreset(preset) {
   const maxKw = parseFloat(document.getElementById('v-ccs').value) || 100;
   curvePoints = CURVE_PRESETS[preset](maxKw);
-  renderCurve();
+  renderGauge();
   updateCurveBadge();
 }
 
 function resetCurve() {
   const maxKw = parseFloat(document.getElementById('v-ccs').value) || 50;
   curvePoints = generateDefaultCurve(maxKw);
-  renderCurve();
+  renderGauge();
   updateCurveBadge();
 }
 
@@ -2792,227 +2979,8 @@ function updateCurveBadge() {
 }
 
 function initCurveEditor() {
-  curveCanvas = document.getElementById('curve-editor-canvas');
-  if (!curveCanvas) return;
-  curveCtx = curveCanvas.getContext('2d');
-
-  // Size canvas to actual px
-  const rect = curveCanvas.parentElement.getBoundingClientRect();
-  curveCanvas.width  = rect.width  || 600;
-  curveCanvas.height = 200;
-
+  renderGauge();
   updateCurveBadge();
-  renderCurve();
-
-  // Events — mouse
-  curveCanvas.addEventListener('mousedown',  onCurveMouseDown);
-  curveCanvas.addEventListener('mousemove',  onCurveMouseMove);
-  curveCanvas.addEventListener('mouseup',    onCurveMouseUp);
-  curveCanvas.addEventListener('mouseleave', onCurveMouseUp);
-  curveCanvas.addEventListener('dblclick',   onCurveDblClick);
-  // Events — touch
-  curveCanvas.addEventListener('touchstart',  onCurveTouchStart, { passive: false });
-  curveCanvas.addEventListener('touchmove',   onCurveTouchMove,  { passive: false });
-  curveCanvas.addEventListener('touchend',    onCurveTouchEnd);
-}
-
-// ── Coordinate helpers ──────────────────────────────────────────────
-function curveToCanvas(soc, kw) {
-  const W = curveCanvas.width, H = curveCanvas.height;
-  const pw = W - CURVE_PAD.left - CURVE_PAD.right;
-  const ph = H - CURVE_PAD.top  - CURVE_PAD.bottom;
-  curveMaxKw = Math.max(...curvePoints.map(p => p.kw), 50) * 1.1;
-  const x = CURVE_PAD.left + (soc / 100) * pw;
-  const y = CURVE_PAD.top  + (1 - kw / curveMaxKw) * ph;
-  return { x, y };
-}
-
-function canvasToCurve(cx, cy) {
-  const W = curveCanvas.width, H = curveCanvas.height;
-  const pw = W - CURVE_PAD.left - CURVE_PAD.right;
-  const ph = H - CURVE_PAD.top  - CURVE_PAD.bottom;
-  curveMaxKw = Math.max(...curvePoints.map(p => p.kw), 50) * 1.1;
-  const soc = Math.round(Math.max(0, Math.min(100, (cx - CURVE_PAD.left) / pw * 100)));
-  const kw  = Math.round(Math.max(0, Math.min(curveMaxKw * 1.2, (1 - (cy - CURVE_PAD.top) / ph) * curveMaxKw)));
-  return { soc, kw };
-}
-
-function getEventXY(e) {
-  const rect = curveCanvas.getBoundingClientRect();
-  const scaleX = curveCanvas.width  / rect.width;
-  const scaleY = curveCanvas.height / rect.height;
-  return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top)  * scaleY,
-  };
-}
-
-function nearestPoint(x, y, threshold = 16) {
-  let best = -1, bestDist = Infinity;
-  curvePoints.forEach((p, i) => {
-    const { x: px, y: py } = curveToCanvas(p.soc, p.kw);
-    const d = Math.hypot(x - px, y - py);
-    if (d < threshold && d < bestDist) { best = i; bestDist = d; }
-  });
-  return best;
-}
-
-// ── Mouse events ────────────────────────────────────────────────────
-function onCurveMouseDown(e) {
-  const { x, y } = getEventXY(e);
-  const idx = nearestPoint(x, y);
-  if (idx >= 0) {
-    curveDragging = idx;
-  } else {
-    // Add new point
-    const { soc, kw } = canvasToCurve(x, y);
-    curvePoints.push({ soc, kw });
-    curvePoints.sort((a, b) => a.soc - b.soc);
-    curveDragging = curvePoints.findIndex(p => p.soc === soc && p.kw === kw);
-    renderCurve();
-    updateCurveBadge();
-  }
-}
-
-function onCurveMouseMove(e) {
-  if (curveDragging === null) return;
-  const { x, y } = getEventXY(e);
-  const { soc, kw } = canvasToCurve(x, y);
-  curvePoints[curveDragging] = { soc, kw };
-  curvePoints.sort((a, b) => a.soc - b.soc);
-  curveDragging = curvePoints.findIndex(p => p.soc === soc && p.kw === kw);
-  renderCurve();
-}
-
-function onCurveMouseUp() { curveDragging = null; }
-
-function onCurveDblClick(e) {
-  const { x, y } = getEventXY(e);
-  const idx = nearestPoint(x, y, 20);
-  if (idx >= 0 && curvePoints.length > 2) {
-    curvePoints.splice(idx, 1);
-    renderCurve();
-    updateCurveBadge();
-  }
-}
-
-// ── Touch events ────────────────────────────────────────────────────
-let lastTap = 0;
-function onCurveTouchStart(e) {
-  e.preventDefault();
-  const touch = e.touches[0];
-  const fakeE = { clientX: touch.clientX, clientY: touch.clientY };
-
-  // Double-tap detection
-  const now = Date.now();
-  if (now - lastTap < 300) {
-    onCurveDblClick(fakeE);
-    lastTap = 0;
-    return;
-  }
-  lastTap = now;
-  onCurveMouseDown(fakeE);
-}
-
-function onCurveTouchMove(e) {
-  e.preventDefault();
-  if (curveDragging === null) return;
-  const touch = e.touches[0];
-  onCurveMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
-}
-
-function onCurveTouchEnd() { curveDragging = null; }
-
-// ── Render ──────────────────────────────────────────────────────────
-function renderCurve() {
-  if (!curveCtx || !curveCanvas) return;
-  const W = curveCanvas.width, H = curveCanvas.height;
-  const pw = W - CURVE_PAD.left - CURVE_PAD.right;
-  const ph = H - CURVE_PAD.top  - CURVE_PAD.bottom;
-  const ctx = curveCtx;
-
-  curveMaxKw = Math.max(...curvePoints.map(p => p.kw), 50) * 1.15;
-
-  // Clear
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#131b22';
-  ctx.fillRect(0, 0, W, H);
-
-  // Grid
-  ctx.strokeStyle = 'rgba(30,45,61,0.9)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = CURVE_PAD.top + ph * i / 4;
-    ctx.beginPath(); ctx.moveTo(CURVE_PAD.left, y); ctx.lineTo(CURVE_PAD.left + pw, y); ctx.stroke();
-    // Y label
-    ctx.fillStyle = '#4a6a7a';
-    ctx.font = '9px JetBrains Mono, monospace';
-    ctx.textAlign = 'right';
-    const val = Math.round(curveMaxKw * (1 - i / 4));
-    ctx.fillText(val, CURVE_PAD.left - 4, y + 4);
-  }
-  for (let i = 0; i <= 10; i++) {
-    const x = CURVE_PAD.left + pw * i / 10;
-    ctx.strokeStyle = 'rgba(30,45,61,0.9)';
-    ctx.beginPath(); ctx.moveTo(x, CURVE_PAD.top); ctx.lineTo(x, CURVE_PAD.top + ph); ctx.stroke();
-  }
-
-  if (curvePoints.length < 2) {
-    ctx.fillStyle = '#4a6a7a';
-    ctx.font = '12px Rajdhani, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Cliquez pour ajouter des points', W / 2, H / 2);
-    return;
-  }
-
-  const sorted = [...curvePoints].sort((a, b) => a.soc - b.soc);
-
-  // Fill under curve
-  const grad = ctx.createLinearGradient(0, CURVE_PAD.top, 0, CURVE_PAD.top + ph);
-  grad.addColorStop(0, 'rgba(0,200,255,0.25)');
-  grad.addColorStop(1, 'rgba(0,200,255,0.02)');
-
-  ctx.beginPath();
-  sorted.forEach((p, i) => {
-    const { x, y } = curveToCanvas(p.soc, p.kw);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  const last = curveToCanvas(sorted[sorted.length - 1].soc, sorted[sorted.length - 1].kw);
-  ctx.lineTo(last.x, CURVE_PAD.top + ph);
-  ctx.lineTo(CURVE_PAD.left, CURVE_PAD.top + ph);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // Line
-  ctx.beginPath();
-  ctx.strokeStyle = '#00c8ff';
-  ctx.lineWidth = 2;
-  sorted.forEach((p, i) => {
-    const { x, y } = curveToCanvas(p.soc, p.kw);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Points
-  sorted.forEach((p, i) => {
-    const { x, y } = curveToCanvas(p.soc, p.kw);
-    const isSelected = curveDragging !== null && curvePoints[curveDragging] === p;
-
-    ctx.beginPath();
-    ctx.arc(x, y, isSelected ? 8 : 6, 0, Math.PI * 2);
-    ctx.fillStyle = isSelected ? '#fff' : '#00c8ff';
-    ctx.fill();
-    ctx.strokeStyle = isSelected ? '#00c8ff' : '#080c10';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Tooltip on hover: show kW value
-    ctx.fillStyle = '#00c8ff';
-    ctx.font = 'bold 9px JetBrains Mono, monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(p.kw + 'kW', x, y - 10);
-  });
 }
 
 // ── Interpolate kW from curve ───────────────────────────────────────
@@ -3020,14 +2988,14 @@ function interpolateCurve(curve, soc) {
   if (!curve || curve.length < 2) return null;
   const sorted = [...curve].sort((a, b) => a.soc - b.soc);
   if (soc <= sorted[0].soc) return sorted[0].kw;
-  if (soc >= sorted[sorted.length - 1].soc) return sorted[sorted.length - 1].kw;
+  if (soc >= sorted[sorted.length-1].soc) return sorted[sorted.length-1].kw;
   for (let i = 0; i < sorted.length - 1; i++) {
-    if (soc >= sorted[i].soc && soc <= sorted[i + 1].soc) {
-      const t = (soc - sorted[i].soc) / (sorted[i + 1].soc - sorted[i].soc);
-      return sorted[i].kw + t * (sorted[i + 1].kw - sorted[i].kw);
+    if (soc >= sorted[i].soc && soc <= sorted[i+1].soc) {
+      const t = (soc - sorted[i].soc) / (sorted[i+1].soc - sorted[i].soc);
+      return sorted[i].kw + t * (sorted[i+1].kw - sorted[i].kw);
     }
   }
-  return sorted[sorted.length - 1].kw;
+  return sorted[sorted.length-1].kw;
 }
 
 // ── AUTONOMIE ──────────────────────────────────────────────────────────────
