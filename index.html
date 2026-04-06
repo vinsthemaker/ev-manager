@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1646,6 +1645,7 @@
     border: 1px solid var(--border2);
     border-radius: 10px;
     padding: 14px 10px 10px;
+    overflow: visible;
   }
 
   .curve-gauge-wrap {
@@ -1654,6 +1654,7 @@
     align-items: flex-end;
     height: 160px;
     position: relative;
+    overflow: visible;
   }
 
   .curve-gauge-col {
@@ -1686,7 +1687,7 @@
     background: var(--surface2);
     border-radius: 4px;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid var(--border);
     cursor: ns-resize;
     min-height: 0;
@@ -1699,6 +1700,26 @@
     right: 0;
     border-radius: 3px 3px 0 0;
     transition: height 0.05s;
+    overflow: visible;
+  }
+
+  .curve-gauge-thumb {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% + 6px);
+    height: 10px;
+    background: #fff;
+    border-radius: 3px;
+    box-shadow: 0 0 6px rgba(0,0,0,0.5);
+    cursor: ns-resize;
+    flex-shrink: 0;
+  }
+
+  .curve-gauge-col.dragging .curve-gauge-thumb {
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(0,200,255,0.7);
   }
 
   .curve-gauge-soc {
@@ -2472,6 +2493,10 @@
           </div>
         </div>
         <div class="curve-gauge-outer">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)" id="gauge-max-label">Max: — kW</span>
+            <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">0 kW</span>
+          </div>
           <div class="curve-gauge-wrap" id="curve-gauge-wrap">
             <!-- Généré par JS -->
           </div>
@@ -2858,11 +2883,11 @@ const CURVE_PRESETS = {
 };
 
 function getGaugeMaxKw() {
-  return Math.max(...curvePoints.map(p => p.kw), 10) * 1.15;
+  const inputVal = parseFloat(document.getElementById('v-ccs')?.value);
+  return (inputVal && inputVal > 0) ? inputVal : Math.max(...curvePoints.map(p => p.kw), 50);
 }
 
 function getBarColor(soc) {
-  // 0%=green, 50%=cyan, 80%=orange, 100%=red
   if (soc <= 50) {
     const t = soc / 50;
     const r = Math.round(0   + t * 0);
@@ -2898,15 +2923,16 @@ function renderGauge() {
         <div class="curve-gauge-track" id="gauge-track-${i}">
           <div class="curve-gauge-bar" id="gauge-bar-${i}"
             style="height:${pct}%;background:linear-gradient(to top,${color},${color}88)">
+            <div class="curve-gauge-thumb" id="gauge-thumb-${i}"></div>
           </div>
         </div>
         <div class="curve-gauge-soc">${p.soc}%</div>
       </div>`;
   }).join('');
 
-  // Attach pointer events
+  // Attach pointer events to each track
   curvePoints.forEach((_, i) => {
-    const col = document.getElementById(`gauge-col-${i}`);
+    const col   = document.getElementById(`gauge-col-${i}`);
     const track = document.getElementById(`gauge-track-${i}`);
     if (!col || !track) return;
 
@@ -2922,9 +2948,9 @@ function renderGauge() {
     function moveDrag(clientY) {
       if (startY === null) return;
       const maxKw2 = getGaugeMaxKw();
-      const dy  = startY - clientY; // up = positive
-      const dkw = Math.round(dy / trackH * maxKw2);
-      const newKw = Math.max(0, Math.min(Math.round(maxKw2 * 1.1), startKw + dkw));
+      const dy   = startY - clientY;
+      const dkw  = dy / trackH * maxKw2;
+      const newKw = Math.max(0, Math.min(maxKw2, Math.round(startKw + dkw)));
       curvePoints[i] = { soc: curvePoints[i].soc, kw: newKw };
       updateGaugeBar(i);
     }
@@ -2937,8 +2963,8 @@ function renderGauge() {
 
     // Mouse
     track.addEventListener('mousedown', e => { e.preventDefault(); startDrag(e.clientY); });
-    document.addEventListener('mousemove', e => { if (startY !== null) moveDrag(e.clientY); });
-    document.addEventListener('mouseup', endDrag);
+    window.addEventListener('mousemove', e => { if (startY !== null) moveDrag(e.clientY); });
+    window.addEventListener('mouseup', endDrag);
 
     // Touch
     track.addEventListener('touchstart', e => { e.preventDefault(); startDrag(e.touches[0].clientY); }, { passive: false });
@@ -2954,14 +2980,17 @@ function updateGaugeBar(i) {
   const color = getBarColor(p.soc);
   const bar = document.getElementById(`gauge-bar-${i}`);
   const kwEl = document.getElementById(`gauge-kw-${i}`);
-  if (bar) bar.style.height = pct + '%';
-  if (bar) bar.style.background = `linear-gradient(to top,${color},${color}88)`;
+  if (bar) {
+    bar.style.height = pct + '%';
+    bar.style.background = `linear-gradient(to top,${color},${color}88)`;
+  }
   if (kwEl) kwEl.textContent = p.kw;
 }
 
 function applyCurvePreset(preset) {
   const maxKw = parseFloat(document.getElementById('v-ccs').value) || 100;
   curvePoints = CURVE_PRESETS[preset](maxKw);
+  updateGaugeMaxLabel();
   renderGauge();
   updateCurveBadge();
 }
@@ -2969,6 +2998,7 @@ function applyCurvePreset(preset) {
 function resetCurve() {
   const maxKw = parseFloat(document.getElementById('v-ccs').value) || 50;
   curvePoints = generateDefaultCurve(maxKw);
+  updateGaugeMaxLabel();
   renderGauge();
   updateCurveBadge();
 }
@@ -2978,7 +3008,21 @@ function updateCurveBadge() {
   if (badge) badge.style.display = curvePoints.length >= 2 ? 'inline-flex' : 'none';
 }
 
+function updateGaugeMaxLabel() {
+  const el = document.getElementById('gauge-max-label');
+  if (el) el.textContent = 'Max: ' + getGaugeMaxKw() + ' kW';
+}
+
 function initCurveEditor() {
+  // Re-render when DC power changes
+  const dcInput = document.getElementById('v-ccs');
+  if (dcInput) {
+    dcInput.addEventListener('input', () => {
+      updateGaugeMaxLabel();
+      renderGauge();
+    });
+  }
+  updateGaugeMaxLabel();
   renderGauge();
   updateCurveBadge();
 }
@@ -4300,3 +4344,4 @@ self.addEventListener('fetch', e => {
 
 </body>
 </html>
+
