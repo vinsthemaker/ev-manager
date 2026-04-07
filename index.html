@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -2409,30 +2410,36 @@
 
       <!-- SECTION CONSOMMATION -->
       <div class="form-section">
-        <div class="form-section-title">03 — Consommation (kWh/100km)</div>
+        <div class="form-section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>03 — Consommation (kWh/100km)</span>
+          <button class="curve-preset-btn" id="btn-autocalc" onclick="autoCalcConso()" style="display:none">⚡ Calculer</button>
+        </div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--font-mono);margin-bottom:10px" id="autocalc-hint">
+          Renseignez 2 vitesses pour calculer les autres automatiquement
+        </div>
         <div class="form-row cols-4">
           <div class="form-group">
             <label>50 km/h</label>
             <div class="input-unit" data-unit="kWh">
-              <input type="number" id="v-conso-50" placeholder="12" min="1" max="60" step="0.1">
+              <input type="number" id="v-conso-50" placeholder="12" min="1" max="60" step="0.1" oninput="onConsoInput()">
             </div>
           </div>
           <div class="form-group">
             <label>90 km/h</label>
             <div class="input-unit" data-unit="kWh">
-              <input type="number" id="v-conso-90" placeholder="16" min="1" max="60" step="0.1">
+              <input type="number" id="v-conso-90" placeholder="16" min="1" max="60" step="0.1" oninput="onConsoInput()">
             </div>
           </div>
           <div class="form-group">
             <label>110 km/h</label>
             <div class="input-unit" data-unit="kWh">
-              <input type="number" id="v-conso-110" placeholder="20" min="1" max="60" step="0.1">
+              <input type="number" id="v-conso-110" placeholder="20" min="1" max="60" step="0.1" oninput="onConsoInput()">
             </div>
           </div>
           <div class="form-group">
             <label>130 km/h</label>
             <div class="input-unit" data-unit="kWh">
-              <input type="number" id="v-conso-130" placeholder="25" min="1" max="60" step="0.1">
+              <input type="number" id="v-conso-130" placeholder="25" min="1" max="60" step="0.1" oninput="onConsoInput()">
             </div>
           </div>
         </div>
@@ -2805,80 +2812,86 @@ function showToast(msg, type = 'success') {
 
 
 // ── CURVE GAUGE EDITOR ─────────────────────────────────────────────────────
-// curvePoints = always 11 fixed points: soc 0,10,20,...,100
-// curvePoints[i] = { soc: i*10, kw: number }
+// 10 jauges = 10 tranches de 10% (0-10, 10-20, ..., 90-100)
+// Stockées avec le midpoint SoC pour l'interpolation
 
-const SOC_STEPS = [0,10,20,30,40,50,60,70,80,90,100];
+const GAUGE_RANGES = [
+  { label:'0–10%',  mid:5  },
+  { label:'10–20%', mid:15 },
+  { label:'20–30%', mid:25 },
+  { label:'30–40%', mid:35 },
+  { label:'40–50%', mid:45 },
+  { label:'50–60%', mid:55 },
+  { label:'60–70%', mid:65 },
+  { label:'70–80%', mid:75 },
+  { label:'80–90%', mid:85 },
+  { label:'90–100%',mid:95 },
+];
 
 function generateDefaultCurve(maxKw) {
   const p = maxKw || 50;
   return [
-    { soc:0,   kw: Math.round(p*0.12) },
-    { soc:10,  kw: Math.round(p*0.95) },
-    { soc:20,  kw: Math.round(p*0.95) },
-    { soc:30,  kw: Math.round(p*0.95) },
-    { soc:40,  kw: Math.round(p*0.95) },
-    { soc:50,  kw: Math.round(p*0.88) },
-    { soc:60,  kw: Math.round(p*0.75) },
-    { soc:70,  kw: Math.round(p*0.60) },
-    { soc:80,  kw: Math.round(p*0.40) },
-    { soc:90,  kw: Math.round(p*0.20) },
-    { soc:100, kw: Math.round(p*0.07) },
+    { soc:5,  kw: Math.round(p*0.55) },
+    { soc:15, kw: Math.round(p*0.95) },
+    { soc:25, kw: Math.round(p*0.95) },
+    { soc:35, kw: Math.round(p*0.95) },
+    { soc:45, kw: Math.round(p*0.92) },
+    { soc:55, kw: Math.round(p*0.85) },
+    { soc:65, kw: Math.round(p*0.72) },
+    { soc:75, kw: Math.round(p*0.55) },
+    { soc:85, kw: Math.round(p*0.30) },
+    { soc:95, kw: Math.round(p*0.12) },
   ];
 }
 
 const CURVE_PRESETS = {
   standard: p => [
-    { soc:0,   kw:Math.round(p*0.12) },
-    { soc:10,  kw:Math.round(p*0.95) },
-    { soc:20,  kw:Math.round(p*0.95) },
-    { soc:30,  kw:Math.round(p*0.95) },
-    { soc:40,  kw:Math.round(p*0.95) },
-    { soc:50,  kw:Math.round(p*0.88) },
-    { soc:60,  kw:Math.round(p*0.75) },
-    { soc:70,  kw:Math.round(p*0.58) },
-    { soc:80,  kw:Math.round(p*0.38) },
-    { soc:90,  kw:Math.round(p*0.18) },
-    { soc:100, kw:Math.round(p*0.07) },
+    { soc:5,  kw:Math.round(p*0.55) },
+    { soc:15, kw:Math.round(p*0.95) },
+    { soc:25, kw:Math.round(p*0.95) },
+    { soc:35, kw:Math.round(p*0.95) },
+    { soc:45, kw:Math.round(p*0.92) },
+    { soc:55, kw:Math.round(p*0.85) },
+    { soc:65, kw:Math.round(p*0.72) },
+    { soc:75, kw:Math.round(p*0.55) },
+    { soc:85, kw:Math.round(p*0.30) },
+    { soc:95, kw:Math.round(p*0.12) },
   ],
   mg: p => [
-    { soc:0,   kw:Math.round(p*0.27) },
-    { soc:10,  kw:Math.round(p*0.97) },
-    { soc:20,  kw:Math.round(p*0.97) },
-    { soc:30,  kw:Math.round(p*0.97) },
-    { soc:40,  kw:Math.round(p*1.00) },
-    { soc:50,  kw:Math.round(p*0.87) },
-    { soc:60,  kw:Math.round(p*0.87) },
-    { soc:70,  kw:Math.round(p*0.79) },
-    { soc:80,  kw:Math.round(p*0.30) },
-    { soc:90,  kw:Math.round(p*0.13) },
-    { soc:100, kw:Math.round(p*0.06) },
+    { soc:5,  kw:Math.round(p*0.40) },
+    { soc:15, kw:Math.round(p*0.97) },
+    { soc:25, kw:Math.round(p*0.97) },
+    { soc:35, kw:Math.round(p*0.97) },
+    { soc:45, kw:Math.round(p*1.00) },
+    { soc:55, kw:Math.round(p*0.87) },
+    { soc:65, kw:Math.round(p*0.87) },
+    { soc:75, kw:Math.round(p*0.79) },
+    { soc:85, kw:Math.round(p*0.20) },
+    { soc:95, kw:Math.round(p*0.08) },
   ],
   ioniq: p => [
-    { soc:0,   kw:Math.round(p*0.20) },
-    { soc:10,  kw:Math.round(p*1.00) },
-    { soc:20,  kw:Math.round(p*1.00) },
-    { soc:30,  kw:Math.round(p*1.00) },
-    { soc:40,  kw:Math.round(p*1.00) },
-    { soc:50,  kw:Math.round(p*1.00) },
-    { soc:60,  kw:Math.round(p*0.85) },
-    { soc:70,  kw:Math.round(p*0.65) },
-    { soc:80,  kw:Math.round(p*0.43) },
-    { soc:90,  kw:Math.round(p*0.20) },
-    { soc:100, kw:Math.round(p*0.07) },
+    { soc:5,  kw:Math.round(p*0.65) },
+    { soc:15, kw:Math.round(p*1.00) },
+    { soc:25, kw:Math.round(p*1.00) },
+    { soc:35, kw:Math.round(p*1.00) },
+    { soc:45, kw:Math.round(p*1.00) },
+    { soc:55, kw:Math.round(p*1.00) },
+    { soc:65, kw:Math.round(p*0.82) },
+    { soc:75, kw:Math.round(p*0.62) },
+    { soc:85, kw:Math.round(p*0.32) },
+    { soc:95, kw:Math.round(p*0.12) },
   ],
   tesla: p => [
-    { soc:0,   kw:Math.round(p*0.10) },
-    { soc:10,  kw:Math.round(p*1.00) },
-    { soc:20,  kw:Math.round(p*1.00) },
-    { soc:30,  kw:Math.round(p*1.00) },
-    { soc:40,  kw:Math.round(p*0.95) },
-    { soc:50,  kw:Math.round(p*0.85) },
-    { soc:60,  kw:Math.round(p*0.72) },
-    { soc:70,  kw:Math.round(p*0.58) },
-    { soc:80,  kw:Math.round(p*0.35) },
-    { soc:90,  kw:Math.round(p*0.18) },
-    { soc:100, kw:Math.round(p*0.08) },
+    { soc:5,  kw:Math.round(p*0.45) },
+    { soc:15, kw:Math.round(p*1.00) },
+    { soc:25, kw:Math.round(p*1.00) },
+    { soc:35, kw:Math.round(p*1.00) },
+    { soc:45, kw:Math.round(p*0.95) },
+    { soc:55, kw:Math.round(p*0.85) },
+    { soc:65, kw:Math.round(p*0.72) },
+    { soc:75, kw:Math.round(p*0.55) },
+    { soc:85, kw:Math.round(p*0.30) },
+    { soc:95, kw:Math.round(p*0.12) },
   ],
 };
 
@@ -2887,25 +2900,17 @@ function getGaugeMaxKw() {
   return (inputVal && inputVal > 0) ? inputVal : Math.max(...curvePoints.map(p => p.kw), 50);
 }
 
-function getBarColor(soc) {
-  if (soc <= 50) {
-    const t = soc / 50;
-    const r = Math.round(0   + t * 0);
-    const g = Math.round(255 + t * (200 - 255));
-    const b = Math.round(136 + t * (255 - 136));
-    return `rgb(${r},${g},${b})`;
-  } else if (soc <= 80) {
-    const t = (soc - 50) / 30;
-    const r = Math.round(0   + t * 255);
-    const g = Math.round(200 + t * (184 - 200));
-    const b = Math.round(255 + t * (48  - 255));
-    return `rgb(${r},${g},${b})`;
+function getBarColor(idx) {
+  const t = idx / 9; // 0 → 1
+  if (t <= 0.5) {
+    const u = t / 0.5;
+    return `rgb(${Math.round(u*0)},${Math.round(255 + u*(200-255))},${Math.round(136 + u*(255-136))})`;
+  } else if (t <= 0.8) {
+    const u = (t - 0.5) / 0.3;
+    return `rgb(${Math.round(u*255)},${Math.round(200 + u*(184-200))},${Math.round(255 + u*(48-255))})`;
   } else {
-    const t = (soc - 80) / 20;
-    const r = Math.round(255);
-    const g = Math.round(184 + t * (61 - 184));
-    const b = Math.round(48  + t * (90 - 48));
-    return `rgb(${r},${g},${b})`;
+    const u = (t - 0.8) / 0.2;
+    return `rgb(255,${Math.round(184 + u*(61-184))},${Math.round(48 + u*(90-48))})`;
   }
 }
 
@@ -2914,11 +2919,12 @@ function renderGauge() {
   if (!wrap) return;
   const maxKw = getGaugeMaxKw();
 
-  wrap.innerHTML = curvePoints.map((p, i) => {
+  wrap.innerHTML = GAUGE_RANGES.map((range, i) => {
+    const p = curvePoints[i];
     const pct = Math.min(100, Math.max(0, p.kw / maxKw * 100));
-    const color = getBarColor(p.soc);
+    const color = getBarColor(i);
     return `
-      <div class="curve-gauge-col" id="gauge-col-${i}" data-idx="${i}">
+      <div class="curve-gauge-col" id="gauge-col-${i}">
         <div class="curve-gauge-kw" id="gauge-kw-${i}">${p.kw}</div>
         <div class="curve-gauge-track" id="gauge-track-${i}">
           <div class="curve-gauge-bar" id="gauge-bar-${i}"
@@ -2926,12 +2932,12 @@ function renderGauge() {
             <div class="curve-gauge-thumb" id="gauge-thumb-${i}"></div>
           </div>
         </div>
-        <div class="curve-gauge-soc">${p.soc}%</div>
+        <div class="curve-gauge-soc" style="font-size:7.5px">${range.label}</div>
       </div>`;
   }).join('');
 
-  // Attach pointer events to each track
-  curvePoints.forEach((_, i) => {
+  // Attach events
+  GAUGE_RANGES.forEach((_, i) => {
     const col   = document.getElementById(`gauge-col-${i}`);
     const track = document.getElementById(`gauge-track-${i}`);
     if (!col || !track) return;
@@ -2951,7 +2957,7 @@ function renderGauge() {
       const dy   = startY - clientY;
       const dkw  = dy / trackH * maxKw2;
       const newKw = Math.max(0, Math.min(maxKw2, Math.round(startKw + dkw)));
-      curvePoints[i] = { soc: curvePoints[i].soc, kw: newKw };
+      curvePoints[i] = { soc: GAUGE_RANGES[i].mid, kw: newKw };
       updateGaugeBar(i);
     }
 
@@ -2961,12 +2967,9 @@ function renderGauge() {
       updateCurveBadge();
     }
 
-    // Mouse
     track.addEventListener('mousedown', e => { e.preventDefault(); startDrag(e.clientY); });
     window.addEventListener('mousemove', e => { if (startY !== null) moveDrag(e.clientY); });
     window.addEventListener('mouseup', endDrag);
-
-    // Touch
     track.addEventListener('touchstart', e => { e.preventDefault(); startDrag(e.touches[0].clientY); }, { passive: false });
     track.addEventListener('touchmove',  e => { e.preventDefault(); moveDrag(e.touches[0].clientY); }, { passive: false });
     track.addEventListener('touchend',   endDrag);
@@ -2977,7 +2980,7 @@ function updateGaugeBar(i) {
   const p = curvePoints[i];
   const maxKw = getGaugeMaxKw();
   const pct = Math.min(100, Math.max(0, p.kw / maxKw * 100));
-  const color = getBarColor(p.soc);
+  const color = getBarColor(i);
   const bar = document.getElementById(`gauge-bar-${i}`);
   const kwEl = document.getElementById(`gauge-kw-${i}`);
   if (bar) {
@@ -3040,6 +3043,95 @@ function interpolateCurve(curve, soc) {
     }
   }
   return sorted[sorted.length-1].kw;
+}
+
+// ── AUTO-CALCUL CONSOMMATION ────────────────────────────────────────────────
+// Modèle physique : conso(v) = a + b*v²
+// a = résistance au roulement, b = traînée aérodynamique
+// Avec 2 points connus on résout le système et extrapole les autres
+
+const CONSO_SPEEDS = [
+  { speed: 50,  id: 'v-conso-50'  },
+  { speed: 90,  id: 'v-conso-90'  },
+  { speed: 110, id: 'v-conso-110' },
+  { speed: 130, id: 'v-conso-130' },
+];
+
+function onConsoInput() {
+  const filled = CONSO_SPEEDS.filter(s => {
+    const v = parseFloat(document.getElementById(s.id).value);
+    return v > 0;
+  });
+
+  const btn  = document.getElementById('btn-autocalc');
+  const hint = document.getElementById('autocalc-hint');
+
+  if (filled.length >= 2) {
+    btn.style.display = 'inline-flex';
+    hint.textContent = `✓ ${filled.length} vitesse(s) renseignée(s) — cliquez Calculer pour extrapoler`;
+    hint.style.color = 'var(--accent2)';
+  } else {
+    btn.style.display = 'none';
+    hint.textContent = 'Renseignez 2 vitesses minimum pour calculer les autres automatiquement';
+    hint.style.color = '';
+  }
+}
+
+function autoCalcConso() {
+  const known = CONSO_SPEEDS
+    .map(s => ({ speed: s.speed, id: s.id, val: parseFloat(document.getElementById(s.id).value) }))
+    .filter(s => s.val > 0);
+
+  if (known.length < 2) return;
+
+  // Régression linéaire sur v² : conso = a + b*v²
+  // Utilise les moindres carrés si plus de 2 points, sinon résolution exacte
+  let a, b;
+
+  if (known.length === 2) {
+    const v1 = known[0].speed, c1 = known[0].val;
+    const v2 = known[1].speed, c2 = known[1].val;
+    b = (c2 - c1) / (v2*v2 - v1*v1);
+    a = c1 - b * v1*v1;
+  } else {
+    // Moindres carrés
+    const n = known.length;
+    const xs = known.map(p => p.speed * p.speed);
+    const ys = known.map(p => p.val);
+    const sumX  = xs.reduce((s, x) => s + x, 0);
+    const sumY  = ys.reduce((s, y) => s + y, 0);
+    const sumXX = xs.reduce((s, x) => s + x*x, 0);
+    const sumXY = xs.reduce((s, x, i) => s + x*ys[i], 0);
+    b = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    a = (sumY - b * sumX) / n;
+  }
+
+  // Calculer et remplir les vitesses manquantes
+  let filled = 0;
+  CONSO_SPEEDS.forEach(s => {
+    const el = document.getElementById(s.id);
+    const existing = parseFloat(el.value);
+    if (!existing || existing <= 0) {
+      const calc = Math.max(1, a + b * s.speed * s.speed);
+      el.value = calc.toFixed(1);
+      // Flash visuel
+      el.style.transition = 'border-color 0.3s, background 0.3s';
+      el.style.borderColor = 'var(--accent2)';
+      el.style.background  = 'rgba(0,255,136,0.08)';
+      setTimeout(() => {
+        el.style.borderColor = '';
+        el.style.background  = '';
+      }, 1500);
+      filled++;
+    }
+  });
+
+  const hint = document.getElementById('autocalc-hint');
+  hint.textContent = filled > 0
+    ? `✓ ${filled} valeur(s) calculée(s) — modèle : ${a.toFixed(2)} + ${b.toFixed(4)}×v²`
+    : '✓ Toutes les vitesses sont déjà renseignées';
+  hint.style.color = 'var(--accent)';
+  onConsoInput();
 }
 
 // ── AUTONOMIE ──────────────────────────────────────────────────────────────
