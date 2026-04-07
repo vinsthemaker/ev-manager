@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1925,6 +1924,117 @@
     margin-top: 2px;
   }
 
+  /* ── INTERACTIVE BATTERY BAR ── */
+  .batt-bar {
+    position: relative;
+    height: 48px;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(74,106,122,0.12), rgba(74,106,122,0.12) 4px,
+      transparent 4px, transparent 8px
+    );
+    border-radius: 10px;
+    border: 1px solid var(--border2);
+    margin-bottom: 6px;
+    cursor: ew-resize;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: visible;
+    touch-action: pan-y; /* scroll vertical autorisé par défaut */
+  }
+
+  .batt-fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    border-radius: 8px;
+    pointer-events: none;
+    transition: left 0.05s, width 0.05s;
+  }
+
+  .batt-handle {
+    position: absolute;
+    top: -5px; bottom: -5px;
+    width: 16px;
+    margin-left: -8px;
+    background: #fff;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+    cursor: ew-resize;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+
+  .batt-handle::before,
+  .batt-handle::after {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #aaa;
+  }
+
+  .batt-handle::before { box-shadow: 0 5px 0 #aaa; }
+
+  .batt-tip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  .batt-tip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-top-color: var(--accent);
+  }
+
+  .batt-center {
+    position: absolute;
+    top: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: rgba(0,0,0,0.75);
+    pointer-events: none;
+    transition: left 0.05s, width 0.05s;
+  }
+
+  .batt-ticks {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    margin-bottom: 16px;
+  }
+
+  .batt-tick {
+    font-size: 9px;
+    color: var(--text3);
+    font-family: var(--font-mono);
+  }
+
   /* ── COMING SOON ── */
   .coming-soon {
     display: flex;
@@ -2030,44 +2140,18 @@
             <span class="panel-title">Plage de batterie</span>
           </div>
           <div class="panel-body">
-            <!-- Visual battery -->
-            <div class="battery-visual">
-              <div class="battery-bar-bg">
-                <div class="battery-bar-unused-left" id="bat-unused-left"></div>
-                <div class="battery-bar-used" id="bat-used">—</div>
-                <div class="battery-bar-unused-right" id="bat-unused-right"></div>
-              </div>
-              <div class="battery-ticks">
-                <span class="battery-tick">0%</span>
-                <span class="battery-tick">25%</span>
-                <span class="battery-tick">50%</span>
-                <span class="battery-tick">75%</span>
-                <span class="battery-tick">100%</span>
-              </div>
+            <div class="batt-bar" id="batt-auto">
+              <div class="batt-fill" id="batt-auto-fill"></div>
+              <div class="batt-handle" id="batt-auto-hl"><span class="batt-tip" id="batt-auto-tipl">20%</span></div>
+              <div class="batt-handle" id="batt-auto-hr"><span class="batt-tip" id="batt-auto-tipr">80%</span></div>
+              <div class="batt-center" id="batt-auto-center">60%</div>
             </div>
-
-            <!-- Dual slider SoC min -->
-            <div class="dual-slider-wrap">
-              <div class="dual-slider-label">
-                <span class="dual-slider-label-title">Borne basse (arrivée)</span>
-                <div class="dual-slider-values">
-                  <span class="ds-val" id="soc-min-val">20%</span>
-                </div>
-              </div>
-              <input type="range" id="soc-min" min="0" max="100" step="5" value="20"
-                oninput="onSocChange()">
-            </div>
-
-            <!-- Dual slider SoC max -->
-            <div class="dual-slider-wrap">
-              <div class="dual-slider-label">
-                <span class="dual-slider-label-title">Borne haute (départ)</span>
-                <div class="dual-slider-values">
-                  <span class="ds-val" id="soc-max-val">80%</span>
-                </div>
-              </div>
-              <input type="range" id="soc-max" min="0" max="100" step="5" value="80"
-                oninput="onSocChange()">
+            <div class="batt-ticks">
+              <span class="batt-tick">0%</span>
+              <span class="batt-tick">25%</span>
+              <span class="batt-tick">50%</span>
+              <span class="batt-tick">75%</span>
+              <span class="batt-tick">100%</span>
             </div>
           </div>
         </div>
@@ -2209,36 +2293,18 @@
             <span class="panel-title">Plage de charge</span>
           </div>
           <div class="panel-body">
-            <!-- Visual battery -->
-            <div class="battery-visual">
-              <div class="battery-bar-bg">
-                <div class="battery-bar-unused-left" id="chg-bat-before"></div>
-                <div class="battery-bar-used" id="chg-bat-fill" style="background:linear-gradient(to right,rgba(255,184,48,0.7),rgba(0,255,136,0.7))">—</div>
-                <div class="battery-bar-unused-right" id="chg-bat-after"></div>
-              </div>
-              <div class="battery-ticks">
-                <span class="battery-tick">0%</span>
-                <span class="battery-tick">25%</span>
-                <span class="battery-tick">50%</span>
-                <span class="battery-tick">75%</span>
-                <span class="battery-tick">100%</span>
-              </div>
+            <div class="batt-bar" id="batt-chg">
+              <div class="batt-fill" id="batt-chg-fill"></div>
+              <div class="batt-handle" id="batt-chg-hl"><span class="batt-tip" id="batt-chg-tipl">20%</span></div>
+              <div class="batt-handle" id="batt-chg-hr"><span class="batt-tip" id="batt-chg-tipr">80%</span></div>
+              <div class="batt-center" id="batt-chg-center">+60%</div>
             </div>
-
-            <div class="dual-slider-wrap">
-              <div class="dual-slider-label">
-                <span class="dual-slider-label-title">SoC de départ (batterie actuelle)</span>
-                <span class="ds-val" id="chg-soc-from-val">20%</span>
-              </div>
-              <input type="range" id="chg-soc-from" min="0" max="100" step="5" value="20" oninput="onChgSocChange()">
-            </div>
-
-            <div class="dual-slider-wrap">
-              <div class="dual-slider-label">
-                <span class="dual-slider-label-title">SoC cible (fin de charge)</span>
-                <span class="ds-val" id="chg-soc-to-val">80%</span>
-              </div>
-              <input type="range" id="chg-soc-to" min="0" max="100" step="5" value="80" oninput="onChgSocChange()">
+            <div class="batt-ticks">
+              <span class="batt-tick">0%</span>
+              <span class="batt-tick">25%</span>
+              <span class="batt-tick">50%</span>
+              <span class="batt-tick">75%</span>
+              <span class="batt-tick">100%</span>
             </div>
           </div>
         </div>
@@ -2526,7 +2592,10 @@
 let vehicles = JSON.parse(localStorage.getItem('ev_vehicles') || '[]');
 let editingId = null;
 let photoDataUrl = null;
-let curvePoints = []; // [{soc:0..100, kw:0..350}] sorted by soc
+let curvePoints = [];
+let autoSocMin = 20, autoSocMax = 80;
+let chgSocFrom = 20, chgSocTo   = 80;
+let battAutoInited = false, battChgInited = false;
 
 // ── TABS ───────────────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -3148,7 +3217,16 @@ const SPEEDS = [
 function initAutoTab() {
   renderAutoVehicleSelector();
   renderSpeedMixGrid();
-  onSocChange();
+  renderBatteryBar('batt-auto', autoSocMin, autoSocMax);
+  if (!battAutoInited) {
+    initBatteryDrag('batt-auto',
+      () => autoSocMin, () => autoSocMax,
+      v => { autoSocMin = v; }, v => { autoSocMax = v; },
+      null, null, computeAuto
+    );
+    battAutoInited = true;
+  }
+  computeAuto();
 }
 
 function renderAutoVehicleSelector() {
@@ -3256,34 +3334,104 @@ function updateSpeedTotal() {
   computeAuto();
 }
 
-function onSocChange() {
-  let minVal = parseInt(document.getElementById('soc-min')?.value || 20);
-  let maxVal = parseInt(document.getElementById('soc-max')?.value || 80);
-
-  // Ensure min < max
-  if (minVal >= maxVal) {
-    minVal = maxVal - 5;
-    if (minVal < 0) minVal = 0;
-    document.getElementById('soc-min').value = minVal;
-  }
-
-  document.getElementById('soc-min-val').textContent = minVal + '%';
-  document.getElementById('soc-max-val').textContent = maxVal + '%';
-
-  // Battery visual
-  const leftEl = document.getElementById('bat-unused-left');
-  const usedEl = document.getElementById('bat-used');
-  const rightEl = document.getElementById('bat-unused-right');
-  if (leftEl) leftEl.style.width = minVal + '%';
-  if (usedEl) {
-    usedEl.style.left = minVal + '%';
-    usedEl.style.width = (maxVal - minVal) + '%';
-    usedEl.textContent = (maxVal - minVal) + '%';
-  }
-  if (rightEl) rightEl.style.width = (100 - maxVal) + '%';
-
-  computeAuto();
+// ── INTERACTIVE BATTERY BAR ────────────────────────────────────────────────
+function renderBatteryBar(id, min, max, gradL, gradR) {
+  const fill   = document.getElementById(id + '-fill');
+  const hl     = document.getElementById(id + '-hl');
+  const hr     = document.getElementById(id + '-hr');
+  const tipL   = document.getElementById(id + '-tipl');
+  const tipR   = document.getElementById(id + '-tipr');
+  const center = document.getElementById(id + '-center');
+  const gL = gradL || 'rgba(0,255,136,0.55)';
+  const gR = gradR || 'rgba(0,200,255,0.55)';
+  if (fill)   { fill.style.left = min + '%'; fill.style.width = (max - min) + '%'; fill.style.background = `linear-gradient(to right,${gL},${gR})`; }
+  if (hl)     hl.style.left = min + '%';
+  if (hr)     hr.style.left = max + '%';
+  if (tipL)   tipL.textContent = min + '%';
+  if (tipR)   tipR.textContent = max + '%';
+  if (center) { center.style.left = min + '%'; center.style.width = (max - min) + '%'; }
 }
+
+function initBatteryDrag(id, getMin, getMax, setMin, setMax, gradL, gradR, onUpdate) {
+  const bar = document.getElementById(id);
+  if (!bar) return;
+
+  let dragging      = null;   // 'min' | 'max' | null
+  let touchStartX   = null;
+  let touchStartY   = null;
+  let dirLocked     = null;   // 'h' | 'v' | null — déterminé au 1er mouvement
+
+  function pct(clientX) {
+    const r = bar.getBoundingClientRect();
+    return Math.round(Math.max(0, Math.min(100, (clientX - r.left) / r.width * 100)) / 5) * 5;
+  }
+
+  function pickSide(clientX) {
+    const p = pct(clientX);
+    return Math.abs(p - getMin()) <= Math.abs(p - getMax()) ? 'min' : 'max';
+  }
+
+  function applyDrag(clientX) {
+    const p = pct(clientX);
+    if (dragging === 'min') setMin(Math.min(p, getMax() - 5));
+    else                    setMax(Math.max(p, getMin() + 5));
+    renderBatteryBar(id, getMin(), getMax(), gradL, gradR);
+    onUpdate();
+  }
+
+  // ── MOUSE (pas de problème de direction) ──
+  bar.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = pickSide(e.clientX);
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    applyDrag(e.clientX);
+  });
+  window.addEventListener('mouseup', () => { dragging = null; });
+
+  // ── TOUCH : détection de direction avant d'activer ──
+  bar.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    dragging    = null;
+    dirLocked   = null;
+    // NE PAS preventDefault ici → permet le scroll vertical naturel
+  }, { passive: true });
+
+  window.addEventListener('touchmove', e => {
+    if (touchStartX === null) return;
+
+    const dx = Math.abs(e.touches[0].clientX - touchStartX);
+    const dy = Math.abs(e.touches[0].clientY - touchStartY);
+
+    // Attendre un mini seuil pour déterminer la direction
+    if (!dirLocked) {
+      if (dx < 6 && dy < 6) return;          // pas encore décidé
+      dirLocked = dx >= dy ? 'h' : 'v';       // horizontal ou vertical ?
+      if (dirLocked === 'h') {
+        // C'est un glissement horizontal → activer le drag
+        dragging = pickSide(touchStartX);
+      }
+    }
+
+    if (dirLocked !== 'h' || !dragging) return; // vertical → scroll naturel
+
+    e.preventDefault(); // bloquer le scroll seulement si drag horizontal confirmé
+    applyDrag(e.touches[0].clientX);
+  }, { passive: false });
+
+  window.addEventListener('touchend', () => {
+    dragging    = null;
+    touchStartX = null;
+    touchStartY = null;
+    dirLocked   = null;
+  });
+}
+
+// Stubs kept for safety (no longer called by sliders)
+function onSocChange() {}
+function onChgSocChange() {}
 
 function selectTemp(btn) {
   document.querySelectorAll('.temp-btn').forEach(b => b.classList.remove('selected'));
@@ -3302,8 +3450,8 @@ function computeAuto() {
     return;
   }
 
-  const socMin = parseInt(document.getElementById('soc-min').value);
-  const socMax = parseInt(document.getElementById('soc-max').value);
+  const socMin = autoSocMin;
+  const socMax = autoSocMax;
   const distance = parseFloat(document.getElementById('auto-distance')?.value) || 0;
 
   // Capacité utilisable
@@ -3469,7 +3617,16 @@ let chgType = 'ac'; // 'ac' | 'dc'
 
 function initChgTab() {
   renderChgVehicleSelector();
-  onChgSocChange();
+  renderBatteryBar('batt-chg', chgSocFrom, chgSocTo, 'rgba(255,184,48,0.55)', 'rgba(0,255,136,0.55)');
+  if (!battChgInited) {
+    initBatteryDrag('batt-chg',
+      () => chgSocFrom, () => chgSocTo,
+      v => { chgSocFrom = v; }, v => { chgSocTo = v; },
+      'rgba(255,184,48,0.55)', 'rgba(0,255,136,0.55)', computeCharge
+    );
+    battChgInited = true;
+  }
+  computeCharge();
 }
 
 function renderChgVehicleSelector() {
@@ -3553,8 +3710,8 @@ function computeCharge() {
   }
 
   const stationPowerRaw = parseFloat(document.getElementById('chg-station-power')?.value) || 0;
-  const socFrom = parseInt(document.getElementById('chg-soc-from')?.value || 20);
-  const socTo   = parseInt(document.getElementById('chg-soc-to')?.value   || 80);
+  const socFrom = chgSocFrom;
+  const socTo   = chgSocTo;
 
   const cap = parseFloat(v.capacity) || 0;
   const deg = parseFloat(v.degradation) || 0;
@@ -4436,4 +4593,3 @@ self.addEventListener('fetch', e => {
 
 </body>
 </html>
-
